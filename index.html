@@ -182,6 +182,13 @@ const diaPts=r=>3*r.v+r.e+r.g+r.a;
 const datas=[...new Set(R.filter(r=>!CONS.has(r.y)).map(r=>r.d))].sort();
 const anos=[...new Set(R.map(r=>r.y))].sort((a,b)=>b-a);
 const anosED=new Set(R.filter(r=>r.e>0||r.dr>0).map(r=>r.y)); // anos com empates/derrotas registrados
+// a partir de 2026, quem não é fixo tem o % de vitórias dos pontos calculado sobre a média de jogos dos fixos no ano
+// (ou sobre os próprios jogos, se tiver mais), para quem joga pouco não ganhar o % cheio
+const ANO_REGRA_AVULSO=2026,FIXOS=new Set(COL.map(c=>c[1]));
+const REF_J={};[...new Set(R.map(r=>r.y))].filter(y=>y>=ANO_REGRA_AVULSO).forEach(y=>{const J={};
+  R.filter(r=>r.y===y&&FIXOS.has(r.j)).forEach(r=>J[r.j]=(J[r.j]||0)+r.v+r.e+r.dr);
+  const v=Object.values(J);REF_J[y]=v.length?v.reduce((a,b)=>a+b,0)/v.length:0});
+const divPV=(j,J,y,gk)=>!gk&&y in REF_J&&!FIXOS.has(j)?Math.max(J,REF_J[y]):J;
 const ult=datas[datas.length-1];
 const MESES=['janeiro','fevereiro','março','abril','maio','junho','julho','agosto','setembro','outubro','novembro','dezembro'];
 const fd=d=>d.split('-').reverse().join('/');
@@ -190,8 +197,8 @@ const n1=x=>isFinite(x)?x.toFixed(2).replace('.',','):'—';
 const n0=x=>isFinite(x)?Math.round(x).toLocaleString('pt-BR'):'—';
 const css=v=>getComputedStyle(document.documentElement).getPropertyValue(v).trim();
 
-function agg(rows){
-  const m={};
+function agg(rows,gk=false){
+  const m={};const ys=new Set(rows.map(r=>r.y)),y1=ys.size===1?[...ys][0]:null;
   for(const r of rows){
     const s=m[r.j]??={j:r.j,rachas:new Set(),V:0,E:0,D:0,G:0,A:0,B:0,GS:0,JG:0,gkR:0,JE:0,VE:0,GE:0,AE:0};
     if(anosED.has(r.y)){s.JE+=r.v+r.e+r.dr;s.VE+=r.v;s.GE+=r.g;s.AE+=r.a}
@@ -200,7 +207,7 @@ function agg(rows){
   }
   // médias por jogo e % de vitórias só com anos que têm empates/derrotas (antes disso jogos = vitórias)
   return Object.values(m).map(s=>{s.R=s.rachas.size;s.J=s.V+s.E+s.D;s.pv=s.JE?s.VE/s.JE:NaN;
-    s.pts=3*s.V+s.E+s.G+s.A+(s.J?100*s.V/s.J:0)+s.B;s.dia=3*s.V+s.E+s.G+s.A;
+    s.dv=divPV(s.j,s.J,y1,gk);s.pts=3*s.V+s.E+s.G+s.A+(s.J?100*s.V/s.dv:0)+s.B;s.dia=3*s.V+s.E+s.G+s.A;
     s.gj=s.JE?s.GE/s.JE:NaN;s.aj=s.JE?s.AE/s.JE:NaN;s.ga=s.JE?(s.GE+s.AE)/s.JE:NaN;return s});
 }
 const topo=(L,k)=>[...L].sort((a,b)=>b[k]-a[k])[0];
@@ -239,11 +246,11 @@ function rng(seed){return()=>{seed|=0;seed=seed+0x6D2B79F5|0;let t=Math.imul(see
 function chances(y,N=4000){
   if(+y!==anos[0]||RESTANTES<=0)return null;
   const rows=R.filter(r=>r.y===+y),nR=new Set(rows.map(r=>r.d)).size;
-  const L=agg(rows),GK=agg(rows.filter(r=>r.p==='GOLEIRO'));
+  const L=agg(rows),GK=agg(rows.filter(r=>r.p==='GOLEIRO'),true);
   const hist={};rows.forEach(r=>(hist[r.j]??=[]).push(r));
   const rand=rng(20261010);
   const win={};PREMIOS.forEach(p=>win[p.id]={});
-  const pts=o=>{const J=o.V+o.E+o.D;return 3*o.V+o.E+o.G+o.A+(J?100*o.V/J:0)+o.B};
+  const pts=(o,j,gk)=>{const J=o.V+o.E+o.D;return 3*o.V+o.E+o.G+o.A+(J?100*o.V/divPV(j,J,+y,gk):0)+o.B};
   for(let n=0;n<N;n++){
     const sim={},simG={};
     for(const s of L){const o={V:s.V,E:s.E,D:s.D,G:s.G,A:s.A,B:s.B};
@@ -252,7 +259,7 @@ function chances(y,N=4000){
       for(let k=0;k<RESTANTES;k++){if(rand()>=pres)continue;const r=h[Math.floor(rand()*h.length)];
         o.V+=r.v;o.E+=r.e;o.D+=r.dr;o.G+=r.g;o.A+=r.a;o.B+=bonus(r);
         if(og&&r.p==='GOLEIRO'){og.V+=r.v;og.E+=r.e;og.D+=r.dr;og.G+=r.g;og.A+=r.a;og.B+=bonus(r)}}
-      sim[s.j]={pts:pts(o),G:o.G,A:o.A,V:o.V};if(og)simG[s.j]={pts:pts(og)};}
+      sim[s.j]={pts:pts(o,s.j),G:o.G,A:o.A,V:o.V};if(og)simG[s.j]={pts:pts(og,s.j,true)};}
     for(const p of PREMIOS){const S=p.gk?simG:sim;let best=-1,who=[];
       for(const j in S){const v=S[j][p.k];if(v>best+1e-9){best=v;who=[j]}else if(Math.abs(v-best)<1e-9)who.push(j)}
       who.forEach(j=>win[p.id][j]=(win[p.id][j]||0)+1/who.length)}
@@ -295,7 +302,7 @@ function ano(y){
   y=+y;const rows=R.filter(r=>r.y===y),L=agg(rows),nR=new Set(rows.map(r=>r.d)).size;
   if(CONS.has(y)){anoCons(y,L);return}
   L.forEach(s=>s.pres=s.R/nR);
-  const GK=agg(rows.filter(r=>r.p==='GOLEIRO'));GK.forEach(s=>s.mgs=s.GS/s.JG);
+  const GK=agg(rows.filter(r=>r.p==='GOLEIRO'),true);GK.forEach(s=>s.mgs=s.GS/s.JG);
   const semED=!anosED.has(y);
   const ch=chances(y);
   const maxP=topo(L,'pts').pts;
@@ -322,7 +329,7 @@ function ano(y){
   <h2>Ranking geral</h2>
   <p class="sub">Toque no nome para abrir a página do jogador, ou no cabeçalho para reordenar.</p>
   ${tabela([['Jogador','j'],['Var.','vr',varF],['Pontos','pts',v=>`<div class="pb"><i style="width:${50*v/maxP}px"></i><b>${n0(v)}</b></div>`],['Presença','pres',v=>`<div class="mini"><i style="width:${v*100}%"></i></div>${pct(v)}`],['Jogos','J'],['V','V',v=>`<span class="cv">${v}</span>`],['E','E'],['D','D',v=>`<span class="cd">${v}</span>`],['Aproveit.','pv',(v,s)=>`<div class="ved" title="${s.V}V ${s.E}E ${s.D}D"><i style="flex:${s.V};background:var(--win)"></i><i style="flex:${s.E};background:var(--draw)"></i><i style="flex:${s.D};background:var(--loss)"></i></div>${pct(v)}`],['Gols','G'],['Gols/J','gj',heat(L,'gj')],['Assist','A'],['Assist/J','aj',heat(L,'aj')]],L,'pts',{medals:true,cls:'rkg'})}
-  <p class="note">Pontos = 3×V + E + gols + assistências + 100×(% de vitórias) + bônus de goleiro. Presença = rachas em que jogou ÷ rachas do ano.${semED?' Nesta temporada não foram registrados empates e derrotas, então o % de vitórias fica distorcido.':''}</p>
+  <p class="note">Pontos = 3×V + E + gols + assistências + 100×(% de vitórias) + bônus de goleiro.${y>=ANO_REGRA_AVULSO?` Para quem não é fixo, o % de vitórias dos pontos é calculado sobre a média de jogos dos fixos no ano (${n0(REF_J[y])} jogos), ou sobre os próprios jogos se tiver mais.`:''} Presença = rachas em que jogou ÷ rachas do ano.${semED?' Nesta temporada não foram registrados empates e derrotas, então o % de vitórias fica distorcido.':''}</p>
   <h2>🧤 Goleiros</h2>
   ${tabela([['Goleiro','j'],['Pontos','pts',n0,'pts'],['Bônus','B'],['Gols sofridos','GS'],['Média/jogo','mgs',n1],['Jogos no gol','JG'],['Rachas no gol','gkR']],GK,'pts',{medals:true})}
   <p class="note">Pontos do goleiro contam só os rachas em que ele jogou no gol. Bônus por racha (só com mais de 2 jogos no gol): 0 gols sofridos = 10 pts, 1 = 9 … 8 = 2, 9 ou mais = 0.</p>`;
@@ -342,7 +349,7 @@ function anoCons(y,L){
 
 /* ---------- Rodada ---------- */
 function semana(d){
-  const rows=R.filter(r=>r.d===d),L=agg(rows),GK=agg(rows.filter(r=>r.p==='GOLEIRO'));
+  const rows=R.filter(r=>r.d===d),L=agg(rows),GK=agg(rows.filter(r=>r.p==='GOLEIRO'),true);
   const cd=(e,t,s,k,suf)=>s?`<div class="c"><small>${e} ${t}</small><b>${s.j}</b><span class="v">${s[k]} ${suf}</span></div>`:'';
   document.getElementById('semana').innerHTML=`
   <div class="bar"><select id="selD">${[...datas].reverse().map(x=>`<option ${x===d?'selected':''} value="${x}">Rodada de ${fd(x)}</option>`).join('')}</select><span class="sub">${L.length} jogadores</span></div>
@@ -549,7 +556,7 @@ function titulos(){
   // temporada atual em disputa
   const yA=anos[0],emAberto=!porAno[yA]&&!CONS.has(yA);
   let aberto='';
-  if(emAberto){const rows=R.filter(r=>r.y===yA),La=agg(rows),GK=agg(rows.filter(r=>r.p==='GOLEIRO'));
+  if(emAberto){const rows=R.filter(r=>r.y===yA),La=agg(rows),GK=agg(rows.filter(r=>r.p==='GOLEIRO'),true);
     aberto=`<div class="yr open"><div class="yh"><b>${yA}</b><span>em disputa · líderes hoje</span></div>${PREMIOS.map(p=>{const l=topo(p.gk?GK:La,p.k);return l?`<div class="yl">${icone(p)}<div><small>${p.nome}</small><b>${l.j}</b></div></div>`:''}).join('')}</div>`}
   document.getElementById('titulos').innerHTML=`
   <div class="cards">
