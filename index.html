@@ -585,7 +585,10 @@ function coletes(){
   const PESO_VEZES=0.7,mxV=Math.max(...L.map(s=>s.ds.length)),mxT=Math.max(...L.map(s=>s.tx));
   L.forEach(s=>s.nota=PESO_VEZES*s.ds.length/mxV+(1-PESO_VEZES)*s.tx/mxT);
   const ordemF=(x,y)=>x.nota-y.nota||x.ult.localeCompare(y.ult);
-  const fila=L.filter(s=>s.ativo).sort(ordemF),fora=L.filter(s=>!s.ativo).sort(ordemF);
+  // trava: quem lavou num dos últimos 4 rachas vai para o fim da fila, do que lavou há mais tempo para o mais recente
+  L.forEach(s=>s.trava=s.ult>=ult4[0]);
+  const ordemT=(x,y)=>(x.trava-y.trava)||(x.trava?x.ult.localeCompare(y.ult):ordemF(x,y));
+  const fila=L.filter(s=>s.ativo).sort(ordemT),fora=L.filter(s=>!s.ativo).sort(ordemF);
   const hist=[...COL].sort((a,b)=>b[0].localeCompare(a[0]));
   const prox=fila[0],last=hist[0];
   document.getElementById('coletes').innerHTML=`
@@ -593,7 +596,7 @@ function coletes(){
   <p style="margin:0">${prox?`lavou ${prox.ds.length}x · última em ${fd(prox.ult)}`:''}</p></div>
   <div class="cards" style="margin-top:10px">${fila.slice(1,3).map((s,i)=>`<div class="c" style="text-align:center"><small>${i+2}º da fila</small><b>${s.j}</b><span class="x">${s.ds.length}x · última ${fd(s.ult)}</span></div>`).join('')}</div>
   <div class="c" style="margin-top:10px;text-align:center"><small>Última lavagem</small><b>${last?last[1]:'—'}</b><span class="x">${last?fd(last[0]):''}</span></div>
-  <h2>Fila</h2><p class="sub">A ordem sai de uma nota: 70% pelo número de vezes que a pessoa já lavou e 30% pela frequência com que lava (vezes ÷ rachas jogados desde ${fd(ini)}). Menor nota lava primeiro, e no empate vai na frente quem lavou há mais tempo. Só entra na fila quem jogou pelo menos um dos últimos 4 rachas. Se o próximo não estiver no racha, passa para o seguinte.</p>
+  <h2>Fila</h2><p class="sub">A ordem sai de uma nota: 70% pelo número de vezes que a pessoa já lavou e 30% pela frequência com que lava (vezes ÷ rachas jogados desde ${fd(ini)}). Menor nota lava primeiro, mas quem lavou num dos últimos 4 rachas vai para o fim da fila, e no empate vai na frente quem lavou há mais tempo. Só entra na fila quem jogou pelo menos um dos últimos 4 rachas. Se o próximo não estiver no racha, passa para o seguinte.</p>
   <div class="tw"><table><thead><tr><th class="pos">#</th><th>Nome</th><th>Vezes</th><th>Rachas jogados</th><th>1 a cada</th><th>Última vez</th></tr></thead><tbody>
   ${fila.map((s,i)=>`<tr${i<3?' style="background:var(--soft);font-weight:'+(i===0?700:600)+'"':''}><td class="pos">${i+1}</td><td>${s.j}</td><td>${s.ds.length}</td><td>${s.nR}</td><td>${(s.nR/s.ds.length).toFixed(1).replace('.',',')} rachas</td><td>${fd(s.ult)}</td></tr>`).join('')}
   </tbody></table></div>
