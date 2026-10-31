@@ -148,6 +148,9 @@ table.rkg tr.grp th+th{border-left:1px solid var(--line)}
 .hist{background:var(--card);border:1px solid var(--line);border-radius:12px;padding:6px 12px;margin-bottom:10px;columns:2;column-gap:20px}
 .hist h3{column-span:all;margin:6px 0;font-size:14px;color:var(--accent)}
 .hist div{padding:3px 0;break-inside:avoid}.hist span{display:inline-block;width:52px;color:var(--muted);font-variant-numeric:tabular-nums}
+.chips{display:flex;flex-wrap:wrap;gap:6px;margin:0 0 14px}
+.chips button{border:1px solid var(--line);background:var(--card);color:var(--ink);padding:7px 13px;border-radius:999px;font:inherit;font-size:13.5px;cursor:pointer}
+.chips button.on{background:var(--accent);border-color:var(--accent);color:#fff;font-weight:600}
 </style>
 </head>
 <body>
@@ -157,6 +160,7 @@ table.rkg tr.grp th+th{border-left:1px solid var(--line)}
   <button data-t="semana">Rodada</button>
   <button data-t="jogador">Jogadores</button>
   <button data-t="comp">Comparar</button>
+  <button data-t="stats">Estatísticas</button>
   <button data-t="titulos">Títulos</button>
   <button data-t="coletes">Coletes</button>
 </div></nav>
@@ -165,6 +169,7 @@ table.rkg tr.grp th+th{border-left:1px solid var(--line)}
   <section id="semana" class="hide"></section>
   <section id="jogador" class="hide"></section>
   <section id="comp" class="hide"></section>
+  <section id="stats" class="hide"></section>
   <section id="titulos" class="hide"></section>
   <section id="coletes" class="hide"></section>
 </main>
@@ -543,6 +548,55 @@ function bindC(a,b,per){
   document.getElementById('cP').onchange=e=>comparar(a,b,e.target.value);
 }
 
+
+/* ---------- estatísticas: um bloco por número ---------- */
+const STATS=[
+  {k:'pts',nome:'Pontos',e:'⭐',suf:'pts',cons:false},
+  {k:'G',nome:'Gols',e:'⚽',suf:'gols',cons:true,pj:'gj'},
+  {k:'A',nome:'Assistências',e:'🎯',suf:'assist.',cons:true,pj:'aj'},
+  {k:'V',nome:'Vitórias',e:'💪',suf:'vitórias',cons:true,pj:'pv'},
+  {k:'R',nome:'Presença',e:'📅',suf:'rachas',cons:false},
+  {k:'gkR',nome:'Goleiros',e:'🧤',suf:'rachas no gol',cons:false,gk:true}];
+function estat(k){
+  const st=STATS.find(x=>x.k===k);
+  const ys=anos.filter(y=>st.cons||!CONS.has(y));
+  // por temporada
+  const porAno=ys.map(y=>{const rows=R.filter(r=>r.y===y);let L=st.gk?agg(rows.filter(r=>r.p==='GOLEIRO'),true):agg(rows);
+    L=L.filter(s=>s[k]>0);return {y,L:ordem(L,k)}}).filter(o=>o.L.length);
+  // carreira: soma das temporadas (pontos e presença) ou total direto
+  const car={};porAno.forEach(({y,L})=>L.forEach(s=>{const c=car[s.j]??={j:s.j,tot:0,anos:0,mel:-1,melY:0,JE:0,num:0,GS:0,JG:0};
+    c.tot+=s[k];c.anos++;if(s[k]>c.mel){c.mel=s[k];c.melY=y}
+    if(anosED.has(y)){c.JE+=s.JE;c.num+=st.k==='G'?s.GE:st.k==='A'?s.AE:s.VE}
+    if(st.gk&&anosED.has(y)){c.GS+=s.GS;c.JG+=s.JG}}));
+  const C=Object.values(car);C.forEach(c=>{c.pj=c.JE>=30?c.num/c.JE:NaN;c.mgs=c.JG>=30?c.GS/c.JG:NaN});
+  const CT=ordem(C,'tot');
+  let rec=null;porAno.forEach(({y,L})=>{if(!rec||L[0][k]>rec.v)rec={j:L[0].j,v:L[0][k],y}});
+  const aj=y=>CONS.has(y)?' (só totais)':!anosED.has(y)&&k==='pts'?' *':y===anos[0]&&RESTANTES>0?' (em andamento)':'';
+  const fmt=v=>k==='V'&&false?v:n0(v);
+  const card=(t,j,v,x)=>`<div class="c"><small>${t}</small><b><a class="pl" data-j="${j}">${j}</a></b><span class="x">${v}${x?' · '+x:''}</span></div>`;
+  let cards=card('🏅 Recorde numa temporada',rec.j,`${fmt(rec.v)} ${st.suf}`,`${rec.y}${aj(rec.y)}`)+card('📚 Líder histórico',CT[0].j,`${fmt(CT[0].tot)} ${st.suf}`,`em ${CT[0].anos} temporada${CT[0].anos>1?'s':''}`);
+  if(st.pj){const b=ordem(C.filter(c=>isFinite(c.pj)),'pj')[0];if(b)cards+=card(k==='V'?'📈 Melhor aproveitamento':'📈 Melhor média por jogo',b.j,k==='V'?pct(b.pj):n1(b.pj)+' por jogo',`desde ${Math.min(...anosED)}, mín. 30 jogos`)}
+  if(st.gk){const b=[...C.filter(c=>isFinite(c.mgs))].sort((a,b)=>a.mgs-b.mgs)[0];if(b)cards+=card('🧱 Menos gols sofridos por jogo',b.j,n1(b.mgs)+' por jogo',`desde ${Math.min(...anosED)}, mín. 30 jogos no gol`)}
+  const cols=[['Jogador','j'],['Total','tot',n0,'pts'],['Temporadas','anos'],['Melhor ano','mel',(v,c)=>`${n0(v)} <small style="color:var(--muted)">(${c.melY})</small>`]];
+  if(st.pj)cols.push([k==='V'?'Aproveit.':'Por jogo','pj',v=>isFinite(v)?(k==='V'?pct(v):n1(v)):'—']);
+  if(st.gk)cols.push(['Sofridos*','GS'],['Sofridos/jogo','mgs',v=>isFinite(v)?n1(v):'—']);
+  const lider=porAno.slice().map(({y,L})=>({j:y+aj(y),ano:y,l:L[0].j,v:L[0][k],s:L[1]?L[1].j:'—',sv:L[1]?L[1][k]:NaN}));
+  document.getElementById('stats').innerHTML=`
+  <div class="chips">${STATS.map(x=>`<button data-k="${x.k}" class="${x.k===k?'on':''}">${x.e} ${x.nome}</button>`).join('')}</div>
+  <h2>${st.e} ${st.nome}</h2>
+  <div class="cards">${cards}</div>
+  <h2>Ranking histórico</h2><p class="sub">Soma de todas as temporadas${st.cons?'':`, sem ${[...CONS].join(', ')}`}. Toque no cabeçalho para reordenar.</p>
+  ${tabela(cols,CT.slice(0,20),'tot',{medals:true})}
+  <h2>Líder de cada ano</h2>
+  ${tabela([['Ano','j'],['Líder','l'],[st.suf[0].toUpperCase()+st.suf.slice(1),'v',n0,'pts'],['2º lugar','s'],['2º','sv',n0]],lider,'ano',{plain:true})}
+  <p class="note">${[
+    st.cons&&CONS.size?`${[...CONS].join(', ')} entra só com os totais do ano, sem racha por racha.`:CONS.size?`${[...CONS].join(', ')} fica de fora porque só tem os totais do ano.`:'',
+    k==='pts'?`* Em ${anos.filter(y=>!anosED.has(y)&&!CONS.has(y)).sort().join(' e ')} não foram registrados empates e derrotas, então o % de vitórias dos pontos considera ${JOGOS_POR_RACHA} jogos por racha jogado.`:'',
+    st.pj?`Médias por jogo só contam de ${Math.min(...anosED)} em diante, quando empates e derrotas passaram a ser registrados.`:'',
+    st.gk?`Conta só os rachas em que o jogador atuou no gol. * Gols sofridos e média por jogo contam de ${Math.min(...anosED)} em diante, porque antes os jogos de cada goleiro não eram registrados por completo.`:''].filter(Boolean).join(' ')}</p>`;
+  document.querySelector('#stats .chips').onclick=e=>{const b=e.target.closest('button');if(b)estat(b.dataset.k)};
+}
+
 function recordes(){
   const ys=anos.filter(y=>!CONS.has(y)),top={};
   const por=ys.map(y=>{const L=agg(R.filter(r=>r.y===y));const a=ordem(L,'pts')[0],g=ordem(L,'G')[0],as=ordem(L,'A')[0];
@@ -626,9 +680,9 @@ const nRAt=new Set(R.filter(r=>r.y===anos[0]).map(r=>r.d)).size;
 document.getElementById('atual').textContent=`Atualizado até a rodada de ${fd(ult)} · ${nRAt} rachas em ${anos[0]}`;
 document.querySelectorAll('nav button').forEach(b=>b.onclick=()=>{
   document.querySelectorAll('nav button').forEach(x=>x.classList.toggle('on',x===b));
-  ['ano','semana','jogador','comp','titulos','coletes'].forEach(id=>document.getElementById(id).classList.toggle('hide',id!==b.dataset.t));scrollTo(0,0)});
+  ['ano','semana','jogador','comp','stats','titulos','coletes'].forEach(id=>document.getElementById(id).classList.toggle('hide',id!==b.dataset.t));scrollTo(0,0)});
 document.addEventListener('click',e=>{const a=e.target.closest('a.pl');if(!a)return;jogador(a.dataset.j);document.querySelector('nav button[data-t=jogador]').click()});
-ano(anos[0]);semana(ult);jogador('');comparar();titulos();coletes();
+ano(anos[0]);semana(ult);jogador('');comparar();estat('G');titulos();coletes();
 </script>
 </body>
 </html>
