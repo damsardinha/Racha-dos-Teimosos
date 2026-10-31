@@ -188,6 +188,8 @@ const ANO_REGRA_AVULSO=2026,FIXOS=new Set(COL.map(c=>c[1]));
 const REF_J={};[...new Set(R.map(r=>r.y))].filter(y=>y>=ANO_REGRA_AVULSO).forEach(y=>{const J={};
   R.filter(r=>r.y===y&&FIXOS.has(r.j)).forEach(r=>J[r.j]=(J[r.j]||0)+r.v+r.e+r.dr);
   const v=Object.values(J);REF_J[y]=v.length?v.reduce((a,b)=>a+b,0)/v.length:0});
+// anos sem empates/derrotas registrados (2022, 2023): o % de vitórias dos pontos supõe 4 jogos por racha jogado (decisão de 31/10/2026, vale como recorde oficial)
+const JOGOS_POR_RACHA=4;
 const divPV=(j,J,y,gk)=>!gk&&y in REF_J&&!FIXOS.has(j)?Math.max(J,REF_J[y]):J;
 const ult=datas[datas.length-1];
 const MESES=['janeiro','fevereiro','março','abril','maio','junho','julho','agosto','setembro','outubro','novembro','dezembro'];
@@ -207,7 +209,7 @@ function agg(rows,gk=false){
   }
   // médias por jogo e % de vitórias só com anos que têm empates/derrotas (antes disso jogos = vitórias)
   return Object.values(m).map(s=>{s.R=s.rachas.size;s.J=s.V+s.E+s.D;s.pv=s.JE?s.VE/s.JE:NaN;
-    s.dv=divPV(s.j,s.J,y1,gk);s.pts=3*s.V+s.E+s.G+s.A+(s.J?100*s.V/s.dv:0)+s.B;s.dia=3*s.V+s.E+s.G+s.A;
+    s.dv=y1&&!anosED.has(y1)&&!CONS.has(y1)?JOGOS_POR_RACHA*s.R:divPV(s.j,s.J,y1,gk);s.pts=3*s.V+s.E+s.G+s.A+(s.J?100*s.V/s.dv:0)+s.B;s.dia=3*s.V+s.E+s.G+s.A;
     s.gj=s.JE?s.GE/s.JE:NaN;s.aj=s.JE?s.AE/s.JE:NaN;s.ga=s.JE?(s.GE+s.AE)/s.JE:NaN;return s});
 }
 const topo=(L,k)=>[...L].sort((a,b)=>b[k]-a[k])[0];
@@ -329,7 +331,7 @@ function ano(y){
   <h2>Ranking geral</h2>
   <p class="sub">Toque no nome para abrir a página do jogador, ou no cabeçalho para reordenar.</p>
   ${tabela([['Jogador','j'],['Var.','vr',varF],['Pontos','pts',v=>`<div class="pb"><i style="width:${50*v/maxP}px"></i><b>${n0(v)}</b></div>`],['Presença','pres',v=>`<div class="mini"><i style="width:${v*100}%"></i></div>${pct(v)}`],['Jogos','J'],['V','V',v=>`<span class="cv">${v}</span>`],['E','E'],['D','D',v=>`<span class="cd">${v}</span>`],['Aproveit.','pv',(v,s)=>`<div class="ved" title="${s.V}V ${s.E}E ${s.D}D"><i style="flex:${s.V};background:var(--win)"></i><i style="flex:${s.E};background:var(--draw)"></i><i style="flex:${s.D};background:var(--loss)"></i></div>${pct(v)}`],['Gols','G'],['Gols/J','gj',heat(L,'gj')],['Assist','A'],['Assist/J','aj',heat(L,'aj')]],L,'pts',{medals:true,cls:'rkg'})}
-  <p class="note">Pontos = 3×V + E + gols + assistências + 100×(% de vitórias) + bônus de goleiro.${y>=ANO_REGRA_AVULSO?` Para quem não é fixo, o % de vitórias dos pontos é calculado sobre a média de jogos dos fixos no ano (${n0(REF_J[y])} jogos), ou sobre os próprios jogos se tiver mais.`:''} Presença = rachas em que jogou ÷ rachas do ano.${semED?' Nesta temporada não foram registrados empates e derrotas, então o % de vitórias fica distorcido.':''}</p>
+  <p class="note">Pontos = 3×V + E + gols + assistências + 100×(% de vitórias) + bônus de goleiro.${y>=ANO_REGRA_AVULSO?` Para quem não é fixo, o % de vitórias dos pontos é calculado sobre a média de jogos dos fixos no ano (${n0(REF_J[y])} jogos), ou sobre os próprios jogos se tiver mais.`:''} Presença = rachas em que jogou ÷ rachas do ano.${semED?` Nesta temporada não foram registrados empates e derrotas. Por isso o % de vitórias dos pontos considera ${JOGOS_POR_RACHA} jogos por racha jogado (vitórias ÷ ${JOGOS_POR_RACHA}×rachas), a média real de 2024 em diante. Esses pontos valem como oficiais para os recordes.`:''}</p>
   <h2>🧤 Goleiros</h2>
   ${tabela([['Goleiro','j'],['Pontos','pts',n0,'pts'],['Bônus','B'],['Gols sofridos','GS'],['Média/jogo','mgs',n1],['Jogos no gol','JG'],['Rachas no gol','gkR']],GK,'pts',{medals:true})}
   <p class="note">Pontos do goleiro contam só os rachas em que ele jogou no gol. Bônus por racha (só com mais de 2 jogos no gol): 0 gols sofridos = 10 pts, 1 = 9 … 8 = 2, 9 ou mais = 0.</p>`;
@@ -541,6 +543,19 @@ function bindC(a,b,per){
   document.getElementById('cP').onchange=e=>comparar(a,b,e.target.value);
 }
 
+function recordes(){
+  const ys=anos.filter(y=>!CONS.has(y)),top={};
+  const por=ys.map(y=>{const L=agg(R.filter(r=>r.y===y));const a=ordem(L,'pts')[0],g=ordem(L,'G')[0],as=ordem(L,'A')[0];
+    [['pts',a],['G',g],['A',as]].forEach(([k,s])=>{if(!top[k]||s[k]>top[k].v)top[k]={j:s.j,v:s[k],y}});return {y,a,g}});
+  const aj=y=>!anosED.has(y)?' *':y===anos[0]&&RESTANTES>0?' (em andamento)':'';
+  const card=(e,t,r,suf)=>`<div class="c"><small>${e} ${t}</small><b><a class="pl" data-j="${r.j}">${r.j}</a></b><span class="x">${n0(r.v)} ${suf} em ${r.y}${aj(r.y)}</span></div>`;
+  return `<h2>📈 Recordes de temporada</h2><p class="sub">O maior número de cada jogador num único ano.</p>
+  <div class="cards">${card('⭐','Mais pontos',top.pts,'pts')}${card('⚽','Mais gols',top.G,'gols')}${card('🎯','Mais assistências',top.A,'assist.')}</div>
+  <div style="height:10px"></div>
+  ${tabela([['Ano','j'],['Mais pontos','mp'],['Pontos','pts',n0,'pts'],['Artilheiro','ag'],['Gols','G']],por.map(o=>({j:o.y+aj(o.y),ano:o.y,mp:o.a.j,pts:o.a.pts,ag:o.g.j,G:o.g.G})),'ano',{plain:true})}
+  <p class="note">* Em ${ys.filter(y=>!anosED.has(y)).join(' e ')} não foram registrados empates e derrotas. Os pontos desses anos consideram ${JOGOS_POR_RACHA} jogos por racha jogado para o % de vitórias, a média real de 2024 em diante, e valem como oficiais. ${[...CONS].join(', ')} fica de fora porque só tem os totais do ano.</p>`;
+}
+
 function titulos(){
   const T={'MELHOR JOGADOR':'mj','ARTILHEIRO':'art','ASSISTENTE':'ass','VITORIOSO':'vit','MELHOR GOLEIRO':'gol'};
   const P=Object.fromEntries(PREMIOS.map(p=>[p.id,p]));
@@ -565,6 +580,7 @@ function titulos(){
    ${dm?`<div class="c"><small>🔥 Temporada mais dominante</small><b>${dm.j}</b><span class="x">${dm.n} prêmios em ${dm.y}</span></div>`:''}
    <div class="c"><small>🏆 Campeões diferentes</small><b>${L.length}</b><span class="x">em ${ys.length} temporadas</span></div>
   </div>
+  ${recordes()}
   <h2>🏛️ Galeria da fama</h2><p class="sub">Todos os premiados, com os troféus de cada um.</p>
   <div class="fame">${L.map((c,i)=>`<div class="fm${i<3?' f'+i:''}"><div class="fr"><span class="rk">${medal(i)}</span><div><b><a class="pl" data-j="${c.j}">${c.j}</a></b><small>${[...c.anos].sort().join(' · ')}</small></div><em>${c.T}</em></div>
     <div class="tts">${PREMIOS.filter(p=>c.by[p.id]).map(p=>mini(p.id,c.by[p.id])).join('')}</div></div>`).join('')}</div>
